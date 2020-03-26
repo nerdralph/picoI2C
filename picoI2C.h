@@ -1,6 +1,7 @@
 /* Small i2c master for AVR devices
  * Ralph Doncaster (c) 2019
  * free software - MIT license
+ * 2020-02-27 version 1.0
  */
 
 #pragma once
@@ -8,19 +9,19 @@
 #include <stdint.h>
 #include <avr/io.h>
 
-#define I2C_DDR DDRB
-#define I2C_PIN PINB
+#ifndef I2C_DDR
+#  define I2C_DDR DDRB
+#  define I2C_PIN PINB
+#endif
 
-const int SUCCESS = 0;
-const int ADDR_NAK = 2;
-const int BUS_INUSE = 5;
+const uint8_t SUCCESS = 0;
+const uint8_t ADDR_NAK = 2;
 
 class PicoI2C {
 public:
     static uint8_t startWrite(uint8_t addr)
     {
-        uint8_t err = start();
-        if (err) return err;
+        start();
         return write(addr<<1);          // address goes in upper 7 bits
     }
     
@@ -30,10 +31,12 @@ public:
         rw(data);
         scl_hi();
     
-        int err = SUCCESS;
+        uint8_t err;
+        // optimization trick saves 4 bytes w/ avr-gcc
+        asm volatile ("clr %0" : "=r" (err) );
         // NACK = SDA high
         if (I2C_PIN & (1<<SDA)) err = ADDR_NAK;
-        I2C_DDR |= (1<<SCL);        // SCL low
+        I2C_DDR |= (1<<SCL);            // SCL low
     
         return err;
     }
@@ -77,17 +80,13 @@ public:
     }
 
 private:
-    static uint8_t start()
+    static void start()
     {
-        // SDA should be high if bus is free
-        if ((I2C_PIN & (1<<SDA)) == 0)
-            return BUS_INUSE;
         // set SDA to output mode for low 
         I2C_DDR |= (1<<SDA);
         asm ("lpm" ::: "r0");           // 3 cycle delay
         // set SCL to output mode for low 
         I2C_DDR |= (1<<SCL);
-        return 0;
     }
 
     __attribute__((always_inline))\
